@@ -10,3 +10,7 @@ binding = "ASSETS"
 binding = "DB"
 database_name = "lab-cleaning-roster"
 database_id = "272e24db-792e-4e9f-bcd4-08201d3c33c5"
+
+# 22:00 UTC = 07:00 JST (checks today's slots), 10:00 UTC = 19:00 JST (checks tomorrow's)
+[triggers]
+crons = ["0 22 * * *", "0 10 * * *"]

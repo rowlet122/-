@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>掃除当番カレンダー</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#1f7a6c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="掃除当番">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <style>
@@ -103,6 +111,17 @@ button{font-family:inherit;}
 }
 .userchip .dot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none;}
 .userchip.offline .dot{background:var(--text-dim);}
+.iconbtn{
+  width:32px;height:32px;border-radius:999px;border:1px solid var(--border);
+  background:var(--surface-2); font-size:15px; cursor:pointer; flex:none;
+  display:flex;align-items:center;justify-content:center;
+}
+.field{display:flex; flex-direction:column; gap:4px; margin-bottom:10px;}
+.field label{font-size:12px; font-weight:600; color:var(--text-dim);}
+.field input{
+  border:1px solid var(--border); border-radius:9px; padding:9px 10px; font-size:14px;
+  background:var(--surface); color:var(--text); font-family:inherit;
+}
 
 .monthnav{display:flex;align-items:center;justify-content:space-between;gap:8px;}
 .monthnav h2{font-size:17px;font-weight:700;}
@@ -228,7 +247,11 @@ button{font-family:inherit;}
 <div class="app">
   <div class="topbar">
     <div class="brand"><div class="mark">掃</div><div class="title">掃除当番カレンダー</div></div>
-    <button class="userchip offline" id="userChip"><span class="dot"></span><span id="userChipLabel">未ログイン</span></button>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <button class="iconbtn" id="installBtn" title="ホーム画面に追加" hidden>📲</button>
+      <button class="iconbtn" id="adminBtn" title="管理">⚙️</button>
+      <button class="userchip offline" id="userChip"><span class="dot"></span><span id="userChipLabel">未ログイン</span></button>
+    </div>
   </div>
 
   <div id="bannerArea"></div>
@@ -259,7 +282,7 @@ button{font-family:inherit;}
       <div id="statsMonth"></div>
     </div>
     <div class="card" style="margin-top:14px;">
-      <div class="section-title">通算の担当回数（2026/10〜）</div>
+      <div class="section-title" id="statsTotalLabel">通算の担当回数</div>
       <div id="statsTotal"></div>
     </div>
   </div>
@@ -278,6 +301,10 @@ button{font-family:inherit;}
 
 <div class="overlay" id="loginOverlay" hidden>
   <div class="sheet" id="loginSheet"></div>
+</div>
+
+<div class="overlay" id="adminOverlay" hidden>
+  <div class="sheet" id="adminSheet"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -300,23 +327,13 @@ var MEMBERS = [
 ];
 function memberName(id){ var m=MEMBERS.find(function(x){return x.id===id;}); return m?m.name:id; }
 
-var MONTHS = [
-  {y:2026,m:9}, {y:2026,m:10}, {y:2026,m:11},
-  {y:2027,m:0}, {y:2027,m:1}, {y:2027,m:2}
-];
-var RANGE_START = new Date(2026,9,1);
-
-var HOLIDAYS = {
-  "2026-10-12":"スポーツの日",
-  "2026-11-03":"文化の日",
-  "2026-11-23":"勤労感謝の日",
-  "2027-01-01":"元日",
-  "2027-01-11":"成人の日",
-  "2027-02-11":"建国記念の日",
-  "2027-02-23":"天皇誕生日",
-  "2027-03-21":"春分の日",
-  "2027-03-22":"振替休日"
-};
+// Populated from /api/config at startup (see applyConfig) so the active term
+// can be moved forward (e.g. to next year's term) without a code change.
+var MONTHS = [];
+var RANGE_START = null;
+var RANGE_END = null;
+var HOLIDAYS = {};
+var PERIOD = {start:"", end:"", label:""};
 
 var DAILY_TASKS = [
   {id:"enter", text:"入室する", detail:"学生証をタッチ→暗証番号「5460」を入力→解錠ボタンを押す"},
@@ -346,23 +363,49 @@ function parseIso(s){ var p=s.split("-"); return new Date(+p[0], +p[1]-1, +p[2])
 function todayIso(){ return iso(new Date()); }
 function sameDay(a,b){ return iso(a)===iso(b); }
 
-var sortedHolidayDates = Object.keys(HOLIDAYS).sort();
 var HOLIDAY_EVE = {};
-(function(){
-  sortedHolidayDates.forEach(function(hIso){
+
+function applyConfig(period, holidays){
+  PERIOD = period || PERIOD;
+  HOLIDAYS = holidays || {};
+  RANGE_START = parseIso(PERIOD.start);
+  RANGE_END = parseIso(PERIOD.end);
+
+  MONTHS = [];
+  var cur = new Date(RANGE_START.getFullYear(), RANGE_START.getMonth(), 1);
+  var endMarker = new Date(RANGE_END.getFullYear(), RANGE_END.getMonth(), 1);
+  while(cur<=endMarker){
+    MONTHS.push({y:cur.getFullYear(), m:cur.getMonth()});
+    cur.setMonth(cur.getMonth()+1);
+  }
+  if(MONTHS.length===0){
+    var now0=new Date();
+    MONTHS.push({y:now0.getFullYear(), m:now0.getMonth()});
+  }
+
+  HOLIDAY_EVE = {};
+  Object.keys(HOLIDAYS).sort().forEach(function(hIso){
     var hd = parseIso(hIso);
-    var cur = new Date(hd);
+    var c = new Date(hd);
     for(var i=0;i<10;i++){
-      cur.setDate(cur.getDate()-1);
-      if(cur<RANGE_START) return;
-      var dow = cur.getDay();
-      if(dow>=1 && dow<=5 && !HOLIDAYS[iso(cur)]){
-        HOLIDAY_EVE[iso(cur)] = {label:HOLIDAYS[hIso], holidayIso:hIso};
+      c.setDate(c.getDate()-1);
+      if(c<RANGE_START) return;
+      var dow = c.getDay();
+      if(dow>=1 && dow<=5 && !HOLIDAYS[iso(c)]){
+        HOLIDAY_EVE[iso(c)] = {label:HOLIDAYS[hIso], holidayIso:hIso};
         return;
       }
     }
   });
-})();
+
+  var now = new Date();
+  state.monthIdx = 0; state.statsMonthIdx = 0;
+  for(var i=0;i<MONTHS.length;i++){
+    if(now.getFullYear()===MONTHS[i].y && now.getMonth()===MONTHS[i].m){ state.monthIdx=i; state.statsMonthIdx=i; break; }
+  }
+  if(now < RANGE_START){ state.monthIdx=0; state.statsMonthIdx=0; }
+  else if(now > RANGE_END){ state.monthIdx=MONTHS.length-1; state.statsMonthIdx=MONTHS.length-1; }
+}
 
 function weekOfMonth(d){ return Math.ceil(d.getDate()/7); }
 
@@ -417,14 +460,6 @@ var state = {
   openDate:null,
   online:false
 };
-(function(){
-  var now = new Date();
-  for(var i=0;i<MONTHS.length;i++){
-    if(now.getFullYear()===MONTHS[i].y && now.getMonth()===MONTHS[i].m){ state.monthIdx=i; state.statsMonthIdx=i; return; }
-  }
-  if(now < RANGE_START){ state.monthIdx=0; state.statsMonthIdx=0; }
-  else { state.monthIdx=MONTHS.length-1; state.statsMonthIdx=MONTHS.length-1; }
-})();
 
 function $(sel){ return document.querySelector(sel); }
 function toast(msg){
@@ -480,6 +515,7 @@ function renderUserChip(){
 function monthLabel(mo){ return mo.y+"年"+(mo.m+1)+"月"; }
 
 function renderCalendar(){
+  if(!MONTHS.length) return;
   var mo = MONTHS[state.monthIdx];
   $("#monthLabel").textContent = monthLabel(mo);
   $("#prevMonth").disabled = state.monthIdx===0;
@@ -544,11 +580,14 @@ function renderCell(d){
 function escapeHtml(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 
 function renderStats(){
+  if(!MONTHS.length) return;
   renderStatsTable($("#statsMonth"), true);
   renderStatsTable($("#statsTotal"), false);
   $("#statsMonthLabel").textContent = monthLabel(MONTHS[state.statsMonthIdx]);
   $("#statsPrev").disabled = state.statsMonthIdx===0;
   $("#statsNext").disabled = state.statsMonthIdx===MONTHS.length-1;
+  var startLabel = RANGE_START ? (RANGE_START.getFullYear()+"/"+(RANGE_START.getMonth()+1)) : "";
+  $("#statsTotalLabel").textContent = "通算の担当回数（"+startLabel+"〜）";
 }
 
 function renderStatsTable(container, monthOnly){
@@ -556,8 +595,9 @@ function renderStatsTable(container, monthOnly){
   var counts = {};
   MEMBERS.forEach(function(m){ counts[m.id]=0; });
   var today = todayIso();
+  var periodStart = PERIOD.start || "0000-00-00";
   state.days.forEach(function(data, ds){
-    if(ds>today) return;
+    if(ds>today || ds<periodStart) return;
     if(monthOnly){
       var d=parseIso(ds);
       if(d.getFullYear()!==mo.y || d.getMonth()!==mo.m) return;
@@ -727,6 +767,14 @@ async function refreshState(){
 }
 
 async function init(){
+  var cfgRes = await api("/api/config");
+  applyConfig(
+    cfgRes.ok ? cfgRes.data.period : {start:"2026-10-01", end:"2027-03-31", label:""},
+    cfgRes.ok ? cfgRes.data.holidays : {}
+  );
+  renderCalendar();
+  renderStats();
+
   if(state.token){
     var r = await api("/api/me");
     if(r.ok && r.data.memberId){ state.memberId = r.data.memberId; }
@@ -762,6 +810,89 @@ async function changeIdentity(){
   await refreshState();
 }
 
+// ---------- admin (next-term setup) ----------
+var ADMIN_KEY = "cleaningRosterAdminPw";
+function openAdmin(){ $("#adminOverlay").hidden=false; renderAdmin(); }
+function closeAdmin(){ $("#adminOverlay").hidden=true; }
+
+function renderAdmin(){
+  var pw = sessionStorage.getItem(ADMIN_KEY) || "";
+  var html = '<div class="sheet-handle"></div><div class="sheet-head">'+
+    '<div><h3>管理</h3><div class="sub">現在の期間: '+escapeHtml(PERIOD.label||"")+'（'+escapeHtml(PERIOD.start||"")+' 〜 '+escapeHtml(PERIOD.end||"")+'）</div></div>'+
+    '<button class="closebtn" id="adminClose">✕</button></div>'+
+    '<div class="field"><label>管理パスワード</label><input type="password" id="adminPw" value="'+escapeHtml(pw)+'" placeholder="サーバーに設定したパスワード"></div>'+
+    '<div class="section-title" style="margin-top:16px;">次の期を設定する</div>'+
+    '<div class="field"><label>表示名（例: 2027年度前期）</label><input type="text" id="periodLabel" placeholder="2027年度前期"></div>'+
+    '<div class="field"><label>開始日</label><input type="date" id="periodStart"></div>'+
+    '<div class="field"><label>終了日</label><input type="date" id="periodEnd"></div>'+
+    '<div class="btnrow"><button class="btn primary" id="periodSave">この期間で切り替える</button></div>'+
+    '<div class="detail" style="margin-top:8px;">切り替えても過去の担当記録は消えません。統計の「通算」は新しい開始日以降のみを数えます。</div>';
+  $("#adminSheet").innerHTML = html;
+  $("#adminClose").addEventListener("click", closeAdmin);
+  $("#periodSave").addEventListener("click", saveAdminPeriod);
+}
+
+async function saveAdminPeriod(){
+  var pw = $("#adminPw").value.trim();
+  var start = $("#periodStart").value;
+  var end = $("#periodEnd").value;
+  var label = $("#periodLabel").value.trim();
+  if(!pw){ toast("パスワードを入力してください"); return; }
+  if(!start || !end){ toast("開始日と終了日を入力してください"); return; }
+  sessionStorage.setItem(ADMIN_KEY, pw);
+  var res;
+  try{
+    res = await fetch("/api/admin/period", {
+      method:"POST",
+      headers:{"content-type":"application/json","x-admin-password":pw},
+      body: JSON.stringify({start:start, end:end, label:label})
+    });
+  }catch(e){ toast("通信に失敗しました"); return; }
+  if(res.status===403){ toast("パスワードが違います"); return; }
+  if(!res.ok){ toast("更新に失敗しました"); return; }
+  var data = await res.json();
+  applyConfig(data.period, HOLIDAYS);
+  renderCalendar(); renderStats();
+  closeAdmin();
+  toast("期間を切り替えました: "+(data.period.label||""));
+}
+
+// ---------- PWA install ----------
+var deferredInstallPrompt = null;
+window.addEventListener("beforeinstallprompt", function(e){
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  $("#installBtn").hidden = false;
+});
+window.addEventListener("appinstalled", function(){ $("#installBtn").hidden = true; });
+
+function isIos(){ return /iphone|ipad|ipod/i.test(navigator.userAgent); }
+function isStandalone(){ return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone; }
+
+async function handleInstallClick(){
+  if(deferredInstallPrompt){
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    $("#installBtn").hidden = true;
+    return;
+  }
+  if(isIos()){
+    toast("共有ボタン→「ホーム画面に追加」で追加できます");
+  } else {
+    toast("ブラウザのメニューから「ホーム画面に追加」を選んでください");
+  }
+}
+
+if("serviceWorker" in navigator){
+  window.addEventListener("load", function(){
+    navigator.serviceWorker.register("/sw.js").catch(function(){});
+  });
+}
+if(isIos() && !isStandalone()){
+  document.addEventListener("DOMContentLoaded", function(){ $("#installBtn").hidden = false; });
+}
+
 async function dayOp(ds, op, payload){
   if(!state.memberId){ toast("先に名前を登録してください"); return; }
   var body = Object.assign({op:op}, payload);
@@ -782,6 +913,8 @@ $("#nextMonth").addEventListener("click", function(){ if(state.monthIdx<MONTHS.l
 $("#statsPrev").addEventListener("click", function(){ if(state.statsMonthIdx>0){ state.statsMonthIdx--; renderStats(); } });
 $("#statsNext").addEventListener("click", function(){ if(state.statsMonthIdx<MONTHS.length-1){ state.statsMonthIdx++; renderStats(); } });
 $("#userChip").addEventListener("click", changeIdentity);
+$("#adminBtn").addEventListener("click", openAdmin);
+$("#installBtn").addEventListener("click", handleInstallClick);
 document.querySelectorAll(".tabbtn").forEach(function(b){
   b.addEventListener("click", function(){
     document.querySelectorAll(".tabbtn").forEach(function(x){ x.classList.remove("active"); });
@@ -793,8 +926,6 @@ document.querySelectorAll(".tabbtn").forEach(function(b){
   });
 });
 
-renderCalendar();
-renderStats();
 renderUserChip();
 init();
 

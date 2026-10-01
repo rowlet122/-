@@ -95,6 +95,60 @@ async function handleRelease(req, env) {
   return json({ ok: true });
 }
 
+async function getConfig(env) {
+  const { results } = await env.DB.prepare("SELECT key, value FROM config WHERE key IN ('period','holidays')").all();
+  const map = {};
+  for (const r of results) {
+    try {
+      map[r.key] = JSON.parse(r.value);
+    } catch (e) {
+      /* ignore corrupt row */
+    }
+  }
+  return {
+    period: map.period || { start: "2026-10-01", end: "2027-03-31", label: "2026年度後期" },
+    holidays: map.holidays || {},
+  };
+}
+
+async function handleConfig(env) {
+  const cfg = await getConfig(env);
+  return json(cfg);
+}
+
+function isAdmin(req, env) {
+  const given = req.headers.get("x-admin-password") || "";
+  return !!env.ADMIN_PASSWORD && given === env.ADMIN_PASSWORD;
+}
+
+async function handleAdminPeriod(req, env) {
+  if (!isAdmin(req, env)) return json({ error: "forbidden" }, 403);
+  const body = await req.json().catch(() => ({}));
+  const { start, end, label } = body;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+    return json({ error: "bad_date" }, 400);
+  }
+  const period = { start, end, label: label || "" };
+  await env.DB.prepare(
+    "INSERT INTO config (key, value) VALUES ('period', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  )
+    .bind(JSON.stringify(period))
+    .run();
+  return json({ ok: true, period });
+}
+
+async function handleAdminHolidays(req, env) {
+  if (!isAdmin(req, env)) return json({ error: "forbidden" }, 403);
+  const body = await req.json().catch(() => ({}));
+  const holidays = body.holidays && typeof body.holidays === "object" ? body.holidays : {};
+  await env.DB.prepare(
+    "INSERT INTO config (key, value) VALUES ('holidays', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  )
+    .bind(JSON.stringify(holidays))
+    .run();
+  return json({ ok: true, holidays });
+}
+
 async function handleState(env) {
   const [{ results: dayRows }, { results: claimRows }] = await Promise.all([
     env.DB.prepare("SELECT date, data FROM days").all(),
@@ -109,7 +163,8 @@ async function handleState(env) {
     }
   }
   const claimed = claimRows.map((r) => r.member_id);
-  return json({ days, claimed, members: MEMBERS });
+  const cfg = await getConfig(env);
+  return json({ days, claimed, members: MEMBERS, period: cfg.period, holidays: cfg.holidays });
 }
 
 async function loadDay(env, date) {
@@ -233,12 +288,39 @@ function applyOp(data, op, memberId, payload) {
   return result;
 }
 
+// ---------- notifications (LINE Messaging API or a generic/Discord/Slack webhook) ----------
+async function sendNotification(env, text) {
+  try {
+    if (env.LINE_CHANNEL_ACCESS_TOKEN && env.LINE_TARGET_ID) {
+      await fetch("https://api.line.me/v2/bot/message/push", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer " + env.LINE_CHANNEL_ACCESS_TOKEN,
+        },
+        body: JSON.stringify({ to: env.LINE_TARGET_ID, messages: [{ type: "text", text }] }),
+      });
+      return;
+    }
+    if (env.NOTIFY_WEBHOOK_URL) {
+      const isDiscord = env.NOTIFY_WEBHOOK_URL.includes("discord.com");
+      const body = isDiscord ? { content: text } : { text, content: text };
+      await fetch(env.NOTIFY_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
+  } catch (e) {
+    console.error("notify failed", e);
+  }
+}
+
 async function handleDayOp(req, env, date) {
   const { memberId } = await getAuthMemberId(req, env);
   const body = await req.json().catch(() => ({}));
   const op = body.op;
-  const needsAuth = op !== undefined && op !== "task" ? true : true; // every mutating op needs a logged-in member
-  if (needsAuth && !memberId) return json({ error: "not_logged_in" }, 401);
+  if (!memberId) return json({ error: "not_logged_in" }, 401);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: "bad_date" }, 400);
 
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -246,10 +328,65 @@ async function handleDayOp(req, env, date) {
     const result = applyOp(data, op, memberId, body);
     if (result.error) return json({ error: result.error }, 409);
     const ok = await saveDay(env, date, data, version);
-    if (ok) return json({ ok: true, day: data });
+    if (ok) {
+      if (op === "request") {
+        const slotKey = body.slot;
+        const occupant = data[slotKey];
+        if (occupant) {
+          const md = date.slice(5).replace("-", "/");
+          const text =
+            "🔄 " +
+            md +
+            "の交代リクエスト: " +
+            memberName(memberId) +
+            "さん → " +
+            (occupant.name || memberName(occupant.memberId)) +
+            "さんへ。アプリで承認/却下してください。";
+          sendNotification(env, text);
+        }
+      }
+      return json({ ok: true, day: data });
+    }
     // version conflict: retry
   }
   return json({ error: "busy" }, 409);
+}
+
+// ---------- scheduled reminders (cron) ----------
+function jstDateStr(offsetDays) {
+  const d = new Date(Date.now() + 9 * 3600 * 1000 + offsetDays * 86400000);
+  return d.toISOString().slice(0, 10);
+}
+
+async function runReminder(cronExpr, env) {
+  const isMorningCheck = cronExpr === "0 22 * * *"; // 07:00 JST — check today
+  const targetDate = isMorningCheck ? jstDateStr(0) : jstDateStr(1); // evening cron checks tomorrow
+  const dow = new Date(targetDate + "T00:00:00Z").getUTCDay();
+  if (dow === 0 || dow === 6) return; // weekend, nothing scheduled
+
+  const row = await env.DB.prepare("SELECT data FROM days WHERE date = ?").bind(targetDate).first();
+  let data = {};
+  if (row) {
+    try {
+      data = JSON.parse(row.data);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  const names = [];
+  for (const key of ["slot1", "slot2"]) {
+    const s = data[key];
+    if (s && s.memberId && s.status !== "absent") names.push(s.name || memberName(s.memberId));
+  }
+  if (names.length >= 2) return; // fully staffed already
+
+  const label = isMorningCheck ? "本日" : "明日";
+  const md = targetDate.slice(5).replace("-", "/");
+  const text =
+    names.length === 0
+      ? "🧹 " + label + "(" + md + ")の掃除当番がまだ誰も登録されていません。参加できる人はアプリから登録してください。"
+      : "🧹 " + label + "(" + md + ")の掃除当番は" + names[0] + "さんのみです。もう1人募集中です。";
+  await sendNotification(env, text);
 }
 
 export default {
@@ -261,6 +398,9 @@ export default {
     if (path === "/api/claim" && req.method === "POST") return handleClaim(req, env);
     if (path === "/api/release" && req.method === "POST") return handleRelease(req, env);
     if (path === "/api/state" && req.method === "GET") return handleState(env);
+    if (path === "/api/config" && req.method === "GET") return handleConfig(env);
+    if (path === "/api/admin/period" && req.method === "POST") return handleAdminPeriod(req, env);
+    if (path === "/api/admin/holidays" && req.method === "POST") return handleAdminHolidays(req, env);
 
     const dayMatch = path.match(/^\/api\/day\/(\d{4}-\d{2}-\d{2})$/);
     if (dayMatch && req.method === "POST") return handleDayOp(req, env, dayMatch[1]);
@@ -268,5 +408,9 @@ export default {
     if (path.startsWith("/api/")) return json({ error: "not_found" }, 404);
 
     return env.ASSETS.fetch(req);
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runReminder(event.cron, env));
   },
 };
