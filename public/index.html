@@ -488,7 +488,7 @@ function renderCalendar(){
   var days = allWeekdaysOfMonth(mo.y, mo.m);
   var weeksEl = $("#weeks");
   weeksEl.innerHTML="";
-  var leadBlanks = (days[0].getDay()+6)%5;
+  var leadBlanks = days[0].getDay()-1; // getDay() is 1(Mon)..5(Fri) here, column 0..4
   var week = [];
   for(var i=0;i<leadBlanks;i++) week.push(null);
   days.forEach(function(d){

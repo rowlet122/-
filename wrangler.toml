@@ -9,4 +9,4 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "lab-cleaning-roster"
-database_id = "REPLACE_WITH_YOUR_DATABASE_ID"
+database_id = "272e24db-792e-4e9f-bcd4-08201d3c33c5"
