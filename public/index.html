@@ -933,7 +933,7 @@ async function dayOp(ds, op, payload){
   var CLOSERS = { dayOverlay: closeDay, adminOverlay: closeAdmin };
   var drag = null;
   document.addEventListener("touchstart", function(e){
-    var handle = e.target.closest(".sheet-handle");
+    var handle = e.target.closest(".sheet-handle, .sheet-head");
     if(!handle) return;
     var overlay = handle.closest(".overlay");
     var sheet = handle.closest(".sheet");
@@ -952,7 +952,7 @@ async function dayOp(ds, op, payload){
     var delta = Math.max(0, drag.lastY - drag.startY);
     var sheet = drag.sheet, overlay = drag.overlay;
     sheet.style.transition = "transform .18s ease";
-    var threshold = window.innerHeight/3;
+    var threshold = window.innerHeight/4;
     if(delta>threshold){
       sheet.style.transform = "translateY(100%)";
       setTimeout(function(){
