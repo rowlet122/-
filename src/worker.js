@@ -70,7 +70,12 @@ async function handleClaim(req, env) {
   const existing = await env.DB.prepare("SELECT token FROM claims WHERE member_id = ?")
     .bind(memberId)
     .first();
-  if (existing && existing.token !== token) {
+  // Same person often opens the app from two separate browser contexts (e.g. a
+  // LINE in-app browser and Safari), which look like two different devices —
+  // each has its own isolated localStorage/token. Don't permanently lock them
+  // out of their own name; just require an explicit confirmation (force) to
+  // take over a name already claimed by a different device.
+  if (existing && existing.token !== token && !body.force) {
     return json({ error: "already_claimed" }, 409);
   }
 

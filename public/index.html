@@ -136,9 +136,12 @@ button{font-family:inherit;}
 .legend span{display:inline-flex;align-items:center;gap:5px;}
 .legend i{width:9px;height:9px;border-radius:3px;display:inline-block;}
 
-.dow-row{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;font-size:11.5px;color:var(--text-dim);text-align:center;padding-inline:2px;}
+.dow-row{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;font-size:11.5px;color:var(--text-dim);text-align:center;padding-inline:2px;}
+.dow-row .we{color:var(--text-dim); opacity:.6;}
 .weeks{display:flex;flex-direction:column;gap:7px;}
-.week{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;}
+.cell.weekend{background:var(--surface-2); opacity:.55; cursor:default; min-height:44px;}
+.cell.weekend .d{color:var(--text-dim);}
 .cell{
   position:relative; min-height:72px; border-radius:12px; border:1px solid var(--border);
   background:var(--surface); padding:6px 6px 6px 8px; cursor:pointer; text-align:left;
@@ -195,7 +198,11 @@ button{font-family:inherit;}
   max-height:88vh; overflow-y:auto; padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px));
   box-shadow:var(--shadow);
 }
-.sheet-handle{width:36px;height:4px;background:var(--border);border-radius:3px;margin:0 auto 10px;}
+.sheet-handle{
+  width:100%; height:28px; margin:-6px 0 2px; touch-action:none;
+  display:flex; align-items:center; justify-content:center; cursor:grab;
+}
+.sheet-handle::before{content:""; width:36px; height:4px; background:var(--border); border-radius:3px;}
 .sheet-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:12px;}
 .sheet-head h3{font-size:17px; font-weight:700;}
 .sheet-head .sub{font-size:12px; color:var(--text-dim); margin-top:2px;}
@@ -229,7 +236,7 @@ button{font-family:inherit;}
   border:1px solid var(--border); background:var(--surface-2); border-radius:12px;
   padding:12px 8px; text-align:center; font-weight:700; font-size:13.5px; cursor:pointer; color:var(--text);
 }
-.rosterbtn.taken{opacity:.4; cursor:not-allowed;}
+.rosterbtn.taken{opacity:.65;}
 .rosterbtn .tk{display:block; font-size:10px; font-weight:500; color:var(--text-dim); margin-top:3px;}
 
 .banner{background:var(--warn-soft); color:var(--warn); border-radius:12px; padding:10px 12px; font-size:12.5px; line-height:1.5;}
@@ -267,7 +274,7 @@ button{font-family:inherit;}
       <span><i style="background:var(--warn)"></i>1人</span>
       <span><i style="background:var(--bad)"></i>まだ誰もいない</span>
     </div>
-    <div class="dow-row"><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div></div>
+    <div class="dow-row"><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div class="we">土</div><div class="we">日</div></div>
     <div class="weeks" id="weeks"></div>
   </div>
 
@@ -436,12 +443,11 @@ function buildTasks(dateStr){
   return list;
 }
 
-function allWeekdaysOfMonth(y,m){
+function allDaysOfMonth(y,m){
   var out=[];
   var d = new Date(y,m,1);
   while(d.getMonth()===m){
-    var dow=d.getDay();
-    if(dow>=1 && dow<=5) out.push(new Date(d));
+    out.push(new Date(d));
     d.setDate(d.getDate()+1);
   }
   return out;
@@ -521,18 +527,18 @@ function renderCalendar(){
   $("#prevMonth").disabled = state.monthIdx===0;
   $("#nextMonth").disabled = state.monthIdx===MONTHS.length-1;
 
-  var days = allWeekdaysOfMonth(mo.y, mo.m);
+  var days = allDaysOfMonth(mo.y, mo.m);
   var weeksEl = $("#weeks");
   weeksEl.innerHTML="";
-  var leadBlanks = days[0].getDay()-1; // getDay() is 1(Mon)..5(Fri) here, column 0..4
+  var leadBlanks = (days[0].getDay()+6)%7; // Mon=0..Sun=6 offset within week row
   var week = [];
   for(var i=0;i<leadBlanks;i++) week.push(null);
   days.forEach(function(d){
     week.push(d);
-    if(week.length===5){ weeksEl.appendChild(renderWeekRow(week)); week=[]; }
+    if(week.length===7){ weeksEl.appendChild(renderWeekRow(week)); week=[]; }
   });
   if(week.length){
-    while(week.length<5) week.push(null);
+    while(week.length<7) week.push(null);
     weeksEl.appendChild(renderWeekRow(week));
   }
 }
@@ -557,6 +563,13 @@ function slotCount(data){
 
 function renderCell(d){
   var ds = iso(d);
+  var dow = d.getDay();
+  if(dow===0 || dow===6){
+    var wcell=document.createElement("div");
+    wcell.className="cell weekend";
+    wcell.innerHTML = '<div class="d">'+d.getDate()+'</div>';
+    return wcell;
+  }
   var data = state.days.get(ds);
   var cnt = slotCount(data);
   var cell=document.createElement("button");
@@ -743,11 +756,16 @@ function renderLogin(){
     '<div class="sheet-head"><div><h3>名前を選んでください</h3><div class="sub">この端末に名前を1つ紐付けます</div></div></div>'+
     '<div class="roster">'+MEMBERS.map(function(m){
       var taken = !!claimed[m.id];
-      return '<button class="rosterbtn '+(taken?"taken":"")+'" data-pick="'+m.id+'" '+(taken?"disabled":"")+'>'+escapeHtml(m.name)+(taken?'<span class="tk">選択済み</span>':'')+'</button>';
-    }).join("")+'</div>';
+      return '<button class="rosterbtn '+(taken?"taken":"")+'" data-pick="'+m.id+'" data-taken="'+(taken?"1":"0")+'">'+escapeHtml(m.name)+(taken?'<span class="tk">選択済み</span>':'')+'</button>';
+    }).join("")+'</div>'+
+    '<div class="detail" style="margin-top:10px;">「選択済み」はLINEのアプリ内ブラウザとSafariなど、別のブラウザで同じ人がすでに選んでいる場合もあります。自分の名前なら選び直して大丈夫です。</div>';
   $("#loginSheet").innerHTML = html;
   $("#loginSheet").querySelectorAll("[data-pick]").forEach(function(b){
-    b.addEventListener("click", function(){ pickMember(b.dataset.pick); });
+    b.addEventListener("click", function(){
+      var taken = b.dataset.taken==="1";
+      if(taken && !confirm(memberName(b.dataset.pick)+"はすでに別の端末で選択されています。自分の名前であれば、このまま選び直せます。続けますか？")) return;
+      pickMember(b.dataset.pick, taken);
+    });
   });
 }
 
@@ -785,8 +803,8 @@ async function init(){
   setInterval(refreshState, 15000);
 }
 
-async function pickMember(memberId){
-  var r = await api("/api/claim", {method:"POST", body:{memberId: memberId}});
+async function pickMember(memberId, force){
+  var r = await api("/api/claim", {method:"POST", body:{memberId: memberId, force: !!force}});
   if(!r.ok){
     if(r.data && r.data.error==="already_claimed") toast("その名前はすでに使われています");
     else toast("登録に失敗しました。もう一度お試しください");
@@ -906,6 +924,47 @@ async function dayOp(ds, op, payload){
   renderCalendar(); renderStats();
   if(state.openDate===ds) renderDayModal();
 }
+
+// ---------- swipe-down-to-close for bottom sheets ----------
+// Sheets are re-rendered via innerHTML, so the handle element itself is
+// replaced on every render — bind once via delegation on document instead
+// of on the (short-lived) element.
+(function(){
+  var CLOSERS = { dayOverlay: closeDay, adminOverlay: closeAdmin };
+  var drag = null;
+  document.addEventListener("touchstart", function(e){
+    var handle = e.target.closest(".sheet-handle");
+    if(!handle) return;
+    var overlay = handle.closest(".overlay");
+    var sheet = handle.closest(".sheet");
+    if(!overlay || !sheet || !CLOSERS[overlay.id]) return; // login sheet can't be dismissed this way
+    drag = { overlay:overlay, sheet:sheet, startY:e.touches[0].clientY, lastY:e.touches[0].clientY };
+    sheet.style.transition = "none";
+  }, {passive:true});
+  document.addEventListener("touchmove", function(e){
+    if(!drag) return;
+    drag.lastY = e.touches[0].clientY;
+    var delta = Math.max(0, drag.lastY - drag.startY);
+    drag.sheet.style.transform = "translateY("+delta+"px)";
+  }, {passive:true});
+  document.addEventListener("touchend", function(){
+    if(!drag) return;
+    var delta = Math.max(0, drag.lastY - drag.startY);
+    var sheet = drag.sheet, overlay = drag.overlay;
+    sheet.style.transition = "transform .18s ease";
+    if(delta>70){
+      sheet.style.transform = "translateY(100%)";
+      setTimeout(function(){
+        sheet.style.transition=""; sheet.style.transform="";
+        CLOSERS[overlay.id]();
+      }, 170);
+    } else {
+      sheet.style.transform = "translateY(0)";
+      setTimeout(function(){ sheet.style.transition=""; }, 200);
+    }
+    drag = null;
+  });
+})();
 
 // ---------- wiring ----------
 $("#prevMonth").addEventListener("click", function(){ if(state.monthIdx>0){ state.monthIdx--; renderCalendar(); } });
