@@ -931,14 +931,16 @@ async function dayOp(ds, op, payload){
 // of on the (short-lived) element.
 (function(){
   var CLOSERS = { dayOverlay: closeDay, adminOverlay: closeAdmin };
+  var ZONE_HEIGHT = 185; // handle + header + roughly the top half of the first slot card
   var drag = null;
   document.addEventListener("touchstart", function(e){
-    var handle = e.target.closest(".sheet-handle, .sheet-head");
-    if(!handle) return;
-    var overlay = handle.closest(".overlay");
-    var sheet = handle.closest(".sheet");
+    var overlay = e.target.closest(".overlay");
+    var sheet = e.target.closest(".sheet");
     if(!overlay || !sheet || !CLOSERS[overlay.id]) return; // login sheet can't be dismissed this way
-    drag = { overlay:overlay, sheet:sheet, startY:e.touches[0].clientY, lastY:e.touches[0].clientY };
+    var touchY = e.touches[0].clientY;
+    var localY = touchY - sheet.getBoundingClientRect().top;
+    if(localY > ZONE_HEIGHT) return; // below the drag-start zone — let taps/scrolling through normally
+    drag = { overlay:overlay, sheet:sheet, startY:touchY, lastY:touchY };
     sheet.style.transition = "none";
   }, {passive:true});
   document.addEventListener("touchmove", function(e){
