@@ -230,6 +230,8 @@ button{font-family:inherit;}
 .task .tx.done{text-decoration:line-through; color:var(--text-dim);}
 .task .detail{font-size:11.5px; color:var(--text-dim); line-height:1.5; margin-top:3px;}
 .task .meta{font-size:10px; color:var(--accent); margin-top:3px;}
+.group-label{font-size:11.5px; font-weight:700; color:var(--accent); margin:16px 0 2px; text-transform:uppercase; letter-spacing:.03em;}
+.group-label:first-child{margin-top:0;}
 
 .roster{display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-top:10px;}
 .rosterbtn{
@@ -342,27 +344,34 @@ var RANGE_END = null;
 var HOLIDAYS = {};
 var PERIOD = {start:"", end:"", label:""};
 
+// group: "daily" = every day regardless of conditions, always check-all'able.
+//        "weekday" = scheduled by the calendar (a specific day of week, Nth
+//        week, or the day before a holiday) — deterministic, so also safe
+//        to bulk-check.
+//        "conditional" = only applies if some real-world condition happens
+//        to be true that day (something arrived, it's summer, it's running
+//        low) — excluded from "すべてチェック" since it may well not apply.
 var DAILY_TASKS = [
-  {id:"enter", text:"入室する", detail:"学生証をタッチ→暗証番号「5460」を入力→解錠ボタンを押す"},
-  {id:"pc", text:"パソコンの電源をONにする"},
-  {id:"dishes", text:"食器を洗う"},
-  {id:"triangle", text:"三角コーナーの袋を入れ替える"},
-  {id:"mugicha", text:"麦茶を作る"},
-  {id:"pot", text:"ポットの水を交換する", detail:"水を入れ替えてコンセントを挿す"},
-  {id:"ice", text:"（夏季のみ）冷凍庫の氷を作る"},
-  {id:"evaporator", text:"エバポレーターをセットする", detail:"コンセントを挿す→①をON（Poff表示ならSet Clear）→②を押しCの点滅を確認→温度がマイナスになったら③を押しPump点灯を確認"},
-  {id:"gomi_matome", text:"一般ゴミ・実験ゴミをまとめる", detail:"実験ゴミには廃液ラベル(赤・入口左の引き出し2段目)を貼り、日付・研究室名・自分の名前・含有主物質名(メタノール/アセトン)を記入する"},
-  {id:"gomi_dashi", text:"ゴミを捨てに行く", detail:"一般ゴミ、入口のペットボトル・缶・ビン、ドラフト内の空の一斗缶・空ビン、金属、ガラス、ダンボール"},
-  {id:"haieki_tank", text:"廃液タンクの残量を確認する", detail:"限界ラインを超えそうならロートを外して蓋を閉め、廃液ラベルをタンクの口が斜めの側に貼る。新しいポリタンクにロートを付け替え、持ち手に細長いシールを貼る（含水=青:水/アセトン、有機=赤:メタノール/アセトン、難燃=黄:クロロホルム）"},
-  {id:"solvent", text:"溶媒を補充する", detail:"デュワー瓶が空なら一斗缶から灯油ポンプで移し替える。一斗缶も残り少なければ試薬ファイル(緑)から発注する"},
-  {id:"trap", text:"トラップ管を片付ける", detail:"中身は含水へ廃棄→メタノール/アセトンで洗浄→引き出しへ収納"},
-  {id:"dryrack", text:"網棚1段目の乾燥済み器具を所定の場所へ片付ける"},
-  {id:"liquid_n2", text:"液体窒素の残量を確認する（木曜以外）", detail:"不足時は申込用紙(入口左の引き出し1段目)に内線5766・ハンコ・日付・希望量「満タン」・残量を記入し折ってクリアファイルへ。台車で10号館横の供給所へ。回収後は1階でエレベーターに液体窒素のみ乗せ、人は同乗せず3階まで階段で向かう"},
-  {id:"iaso_register", text:"薬品が届いていたらIASOに登録する"},
-  {id:"iaso_check", text:"IASOの指定数量が0.2を超えていないか確認する", detail:"超えていたら使用済み試薬を削除する（たまにでOK）"},
-  {id:"vacuum", text:"掃除機をかける"},
-  {id:"seikyo", text:"ホワイトボードの購入希望を確認し生協で買い出しする", detail:"佐々木先生の個室入って右の引き出し1段目から生協カードを取り、レジで提示。買い出し後はレシートとカードを引き出しへ戻す"}
+  {id:"enter", group:"daily", text:"入室する", detail:"学生証をタッチ→暗証番号「5460」を入力→解錠ボタンを押す"},
+  {id:"pc", group:"daily", text:"パソコンの電源をONにする"},
+  {id:"dishes", group:"daily", text:"食器を洗う"},
+  {id:"triangle", group:"daily", text:"三角コーナーの袋を入れ替える"},
+  {id:"mugicha", group:"daily", text:"麦茶を作る"},
+  {id:"pot", group:"daily", text:"ポットの水を交換する", detail:"水を入れ替えてコンセントを挿す"},
+  {id:"ice", group:"conditional", text:"（夏季のみ）冷凍庫の氷を作る"},
+  {id:"evaporator", group:"daily", text:"エバポレーターをセットする", detail:"コンセントを挿す→①をON（Poff表示ならSet Clear）→②を押しCの点滅を確認→温度がマイナスになったら③を押しPump点灯を確認"},
+  {id:"gomi_matome", group:"daily", text:"一般ゴミ・実験ゴミをまとめる", detail:"実験ゴミには廃液ラベル(赤・入口左の引き出し2段目)を貼り、日付・研究室名・自分の名前・含有主物質名(メタノール/アセトン)を記入する"},
+  {id:"gomi_dashi", group:"daily", text:"ゴミを捨てに行く", detail:"一般ゴミ、入口のペットボトル・缶・ビン、ドラフト内の空の一斗缶・空ビン、金属、ガラス、ダンボール"},
+  {id:"haieki_tank", group:"daily", text:"廃液タンクの残量を確認する", detail:"限界ラインを超えそうならロートを外して蓋を閉め、廃液ラベルをタンクの口が斜めの側に貼る。新しいポリタンクにロートを付け替え、持ち手に細長いシールを貼る（含水=青:水/アセトン、有機=赤:メタノール/アセトン、難燃=黄:クロロホルム）"},
+  {id:"solvent", group:"conditional", text:"溶媒を補充する（デュワー瓶が空になったら）", detail:"一斗缶から灯油ポンプで移し替える。一斗缶も残り少なければ試薬ファイル(緑)から発注する"},
+  {id:"trap", group:"daily", text:"トラップ管を片付ける", detail:"中身は含水へ廃棄→メタノール/アセトンで洗浄→引き出しへ収納"},
+  {id:"dryrack", group:"daily", text:"網棚1段目の乾燥済み器具を所定の場所へ片付ける"},
+  {id:"iaso_register", group:"conditional", text:"薬品が届いていたらIASOに登録する"},
+  {id:"iaso_check", group:"conditional", text:"IASOの指定数量が0.2を超えていないか確認する（たまにでOK）", detail:"超えていたら使用済み試薬を削除する"},
+  {id:"vacuum", group:"daily", text:"掃除機をかける"},
+  {id:"seikyo", group:"conditional", text:"ホワイトボードに購入希望が書いてあったら生協で買い出しする", detail:"佐々木先生の個室入って右の引き出し1段目から生協カードを取り、レジで提示。買い出し後はレシートとカードを引き出しへ戻す"}
 ];
+var LIQUID_N2_TASK = {id:"liquid_n2", group:"daily", text:"液体窒素の残量を確認する", detail:"不足時は申込用紙(入口左の引き出し1段目)に内線5766・ハンコ・日付・希望量「満タン」・残量を記入し折ってクリアファイルへ。台車で10号館横の供給所へ。回収後は1階でエレベーターに液体窒素のみ乗せ、人は同乗せず3階まで階段で向かう"};
 
 function pad(n){ return n<10?"0"+n:""+n; }
 function iso(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
@@ -420,25 +429,26 @@ function buildTasks(dateStr){
   var d = parseIso(dateStr);
   var dow = d.getDay();
   var list = DAILY_TASKS.slice();
+  if(dow!==4) list.push(LIQUID_N2_TASK); // every day except Thursday
   if(dow===1 && d.getDate()<=7){
-    list.push({id:"bousai", text:"防災安全チェック（第1月曜）", detail:"入口近くの赤いファイルに日付とチェックを記入する"});
+    list.push({id:"bousai", group:"weekday", text:"防災安全チェック（第1月曜）", detail:"入口近くの赤いファイルに日付とチェックを記入する"});
   }
   if(dow===2){
-    list.push({id:"haieki_yoyaku_tue", text:"廃液予約をする"});
+    list.push({id:"haieki_yoyaku_tue", group:"weekday", text:"廃液予約をする"});
     var w = weekOfMonth(d);
     if(w===2||w===4){
-      list.push({id:"sodai", text:"粗大ゴミを出す（第2・4火曜）", detail:"不要な椅子などがあれば5号館と11号館の間のスペースへ運ぶ"});
+      list.push({id:"sodai", group:"weekday", text:"粗大ゴミを出す（第2・4火曜）", detail:"不要な椅子などがあれば5号館と11号館の間のスペースへ運ぶ"});
     }
   }
-  if(dow===3){ list.push({id:"haieki_kaishu_wed", text:"廃液回収日"}); }
-  if(dow===4){ list.push({id:"haieki_yoyaku_thu", text:"廃液予約をする"}); }
+  if(dow===3){ list.push({id:"haieki_kaishu_wed", group:"weekday", text:"廃液回収日"}); }
+  if(dow===4){ list.push({id:"haieki_yoyaku_thu", group:"weekday", text:"廃液予約をする"}); }
   if(dow===5){
-    list.push({id:"haieki_kaishu_fri", text:"廃液回収日"});
-    list.push({id:"kyujitsu_weekly", text:"休日届けを提出する", detail:"施設使用申込書(入口左奥の引き出し1段目)の「2.休日登校」に○、日時に次の日曜 8:00〜21:00 と記入し、5号館入口の警備員さんへ提出する"});
+    list.push({id:"haieki_kaishu_fri", group:"weekday", text:"廃液回収日"});
+    list.push({id:"kyujitsu_weekly", group:"weekday", text:"休日届けを提出する", detail:"施設使用申込書(入口左奥の引き出し1段目)の「2.休日登校」に○、日時に次の日曜 8:00〜21:00 と記入し、5号館入口の警備員さんへ提出する"});
   }
   var eve = HOLIDAY_EVE[dateStr];
   if(eve){
-    list.push({id:"holiday_todoke_"+eve.holidayIso, text:(eve.holidayIso+"「"+eve.label+"」の休日届けを早めに提出する（まだなら）")});
+    list.push({id:"holiday_todoke_"+eve.holidayIso, group:"weekday", text:(eve.holidayIso+"「"+eve.label+"」の休日届けを早めに提出する（まだなら）")});
   }
   return list;
 }
@@ -660,7 +670,7 @@ function renderDayModal(){
 
   var tasks = buildTasks(ds);
   var checklist = data.checklist || {};
-  var tasksHtml = tasks.map(function(t){
+  function renderTask(t){
     var done = checklist[t.id] && checklist[t.id].done;
     return '<label class="task">'+
       '<input type="checkbox" data-task="'+t.id+'" '+(done?"checked":"")+'>'+
@@ -668,6 +678,12 @@ function renderDayModal(){
       (t.detail?('<div class="detail">'+escapeHtml(t.detail)+'</div>'):'')+
       (done?('<div class="meta">✓ '+escapeHtml(checklist[t.id].by||'')+'</div>'):'')+
       '</div></label>';
+  }
+  var GROUP_LABELS = {daily:"毎日のタスク", weekday:"今日の曜日のタスク", conditional:"条件付きタスク（該当する場合のみ）"};
+  var tasksHtml = ["daily","weekday","conditional"].map(function(g){
+    var items = tasks.filter(function(t){ return t.group===g; });
+    if(!items.length) return "";
+    return '<div class="group-label">'+GROUP_LABELS[g]+'</div>'+items.map(renderTask).join("");
   }).join("");
 
   sheet.innerHTML = head +
@@ -695,7 +711,8 @@ function renderDayModal(){
   }); });
   $("#checkAllBtn").addEventListener("click", function(){
     if(!state.memberId){ toast("先に名前を登録してください"); return; }
-    dayOp(ds,"taskAll",{taskIds: tasks.map(function(t){return t.id;}), done:true});
+    var ids = tasks.filter(function(t){ return t.group!=="conditional"; }).map(function(t){return t.id;});
+    dayOp(ds,"taskAll",{taskIds: ids, done:true});
   });
   $("#uncheckAllBtn").addEventListener("click", function(){
     dayOp(ds,"taskAll",{taskIds: tasks.map(function(t){return t.id;}), done:false});
@@ -925,49 +942,53 @@ async function dayOp(ds, op, payload){
   if(state.openDate===ds) renderDayModal();
 }
 
-// ---------- swipe-down-to-close for bottom sheets ----------
-// Sheets are re-rendered via innerHTML, so the handle element itself is
-// replaced on every render — bind once via delegation on document instead
-// of on the (short-lived) element.
-(function(){
-  var CLOSERS = { dayOverlay: closeDay, adminOverlay: closeAdmin };
-  var ZONE_HEIGHT = 185; // handle + header + roughly the top half of the first slot card
-  var drag = null;
-  document.addEventListener("touchstart", function(e){
-    var overlay = e.target.closest(".overlay");
-    var sheet = e.target.closest(".sheet");
-    if(!overlay || !sheet || !CLOSERS[overlay.id]) return; // login sheet can't be dismissed this way
-    var touchY = e.touches[0].clientY;
-    var localY = touchY - sheet.getBoundingClientRect().top;
-    if(localY > ZONE_HEIGHT) return; // below the drag-start zone — let taps/scrolling through normally
-    drag = { overlay:overlay, sheet:sheet, startY:touchY, lastY:touchY };
-    sheet.style.transition = "none";
+// ---------- swipe-down-to-close for bottom sheets (scroll chaining) ----------
+// #daySheet / #adminSheet are the persistent scrollable containers (only
+// their innerHTML is replaced on render, so binding once here is safe).
+// A swipe anywhere inside scrolls the content normally; only once it's
+// already scrolled to the top does continuing to drag down convert into
+// closing the sheet — like a native iOS sheet.
+function enableSwipeToClose(sheetEl, closeFn){
+  var startY = 0, dragging = false, lastDelta = 0;
+  sheetEl.addEventListener("touchstart", function(e){
+    startY = e.touches[0].clientY;
+    dragging = false;
+    lastDelta = 0;
   }, {passive:true});
-  document.addEventListener("touchmove", function(e){
-    if(!drag) return;
-    drag.lastY = e.touches[0].clientY;
-    var delta = Math.max(0, drag.lastY - drag.startY);
-    drag.sheet.style.transform = "translateY("+delta+"px)";
-  }, {passive:true});
-  document.addEventListener("touchend", function(){
-    if(!drag) return;
-    var delta = Math.max(0, drag.lastY - drag.startY);
-    var sheet = drag.sheet, overlay = drag.overlay;
-    sheet.style.transition = "transform .18s ease";
+  sheetEl.addEventListener("touchmove", function(e){
+    var y = e.touches[0].clientY;
+    if(!dragging){
+      if(sheetEl.scrollTop<=0 && y>startY){
+        dragging = true;
+        startY = y; // reset baseline so the drag starts smoothly at 0
+        sheetEl.style.transition = "none";
+      } else {
+        return; // still room to scroll (or moving up) — let it scroll normally
+      }
+    }
+    lastDelta = Math.max(0, y-startY);
+    sheetEl.style.transform = "translateY("+lastDelta+"px)";
+    e.preventDefault();
+  }, {passive:false});
+  sheetEl.addEventListener("touchend", function(){
+    if(!dragging) return;
+    dragging = false;
     var threshold = window.innerHeight/4;
-    if(delta>threshold){
-      sheet.style.transform = "translateY(100%)";
+    sheetEl.style.transition = "transform .18s ease";
+    if(lastDelta>threshold){
+      sheetEl.style.transform = "translateY(100%)";
       setTimeout(function(){
-        sheet.style.transition=""; sheet.style.transform="";
-        CLOSERS[overlay.id]();
+        sheetEl.style.transition=""; sheetEl.style.transform="";
+        closeFn();
       }, 170);
     } else {
-      sheet.style.transform = "translateY(0)";
-      setTimeout(function(){ sheet.style.transition=""; }, 200);
+      sheetEl.style.transform = "translateY(0)";
+      setTimeout(function(){ sheetEl.style.transition=""; }, 200);
     }
-    drag = null;
   });
-})();
+}
+enableSwipeToClose($("#daySheet"), closeDay);
+enableSwipeToClose($("#adminSheet"), closeAdmin);
 
 // ---------- wiring ----------
 $("#prevMonth").addEventListener("click", function(){ if(state.monthIdx>0){ state.monthIdx--; renderCalendar(); } });
