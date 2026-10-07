@@ -77,6 +77,7 @@
 }
 *{box-sizing:border-box;}
 html,body{height:100%;}
+html{overscroll-behavior-y:contain;}
 body{
   margin:0;
   background:var(--bg);
@@ -85,6 +86,8 @@ body{
   padding-inline:8px;
   padding-block:calc(12px + env(safe-area-inset-top,0px)) calc(90px + env(safe-area-inset-bottom,0px));
   min-height:100%;
+  overscroll-behavior-y:contain;
+  touch-action:manipulation;
 }
 .mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;}
 h1,h2,h3{text-wrap:balance;margin:0;}
@@ -1045,6 +1048,30 @@ function enableSwipeToClose(sheetEl, closeFn){
 }
 enableSwipeToClose($("#daySheet"), closeDay);
 enableSwipeToClose($("#adminSheet"), closeAdmin);
+
+// ---------- swipe left/right to change month ----------
+(function(){
+  var startX = 0, startY = 0, tracking = false;
+  var el = $("#calendarView");
+  el.addEventListener("touchstart", function(e){
+    if(e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+  }, {passive:true});
+  el.addEventListener("touchend", function(e){
+    if(!tracking) return;
+    tracking = false;
+    var dx = e.changedTouches[0].clientX - startX;
+    var dy = e.changedTouches[0].clientY - startY;
+    if(Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+    if(dx < 0){
+      if(state.monthIdx < MONTHS.length-1){ state.monthIdx++; renderCalendar(); }
+    } else {
+      if(state.monthIdx > 0){ state.monthIdx--; renderCalendar(); }
+    }
+  }, {passive:true});
+})();
 
 // ---------- wiring ----------
 $("#prevMonth").addEventListener("click", function(){ if(state.monthIdx>0){ state.monthIdx--; renderCalendar(); } });
