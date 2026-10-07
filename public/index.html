@@ -93,7 +93,7 @@ button{font-family:inherit;}
   max-width:560px; width:100%; margin:0 auto; display:flex; flex-direction:column; gap:14px;
   flex:1; min-height:0;
   padding-inline:8px;
-  padding-block:calc(12px + env(safe-area-inset-top,0px)) calc(90px + env(safe-area-inset-bottom,0px));
+  padding-block:calc(4px + env(safe-area-inset-top,0px)) calc(90px + env(safe-area-inset-bottom,0px));
   overflow-y:auto;
   overscroll-behavior:contain;
 }
@@ -147,7 +147,9 @@ button{font-family:inherit;}
 
 .dow-row{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:10.5px;color:var(--text-dim);text-align:center;padding-inline:0;}
 .dow-row .we{color:var(--text-dim); opacity:.6;}
-.weeks{display:flex;flex-direction:column;gap:2px;}
+.cal-viewport{overflow:hidden; width:100%;}
+.cal-track{display:flex; width:300%; transform:translateX(-33.3334%);}
+.weeks{display:flex;flex-direction:column;gap:2px; flex:0 0 33.3334%; min-width:0;}
 .week{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
 .cell.weekend{background:var(--surface-2); opacity:.55; cursor:default; min-height:40px;}
 .cell.weekend .d{color:var(--text-dim);}
@@ -160,8 +162,8 @@ button{font-family:inherit;}
 .cell .d{font-size:11px; font-weight:700;}
 .cell .status-bar{position:absolute; left:0; top:0; bottom:0; width:3px;}
 .cell .names{display:flex;flex-direction:column;gap:1px; margin-top:auto;}
-.cell .nm{font-size:9px; line-height:1.2; font-weight:700; color:var(--text); white-space:normal; word-break:break-word; overflow-wrap:anywhere;}
-.cell .nm.absent{text-decoration:line-through; opacity:.6; font-weight:600;}
+.cell .nm{font-size:9px; line-height:1.2; font-weight:500; color:var(--text); white-space:normal; word-break:break-word; overflow-wrap:anywhere;}
+.cell .nm.absent{text-decoration:line-through; opacity:.6;}
 .cell .today-ring{position:absolute; inset:2px; border:2px solid var(--accent); border-radius:7px; pointer-events:none;}
 .cell.holiday .d{color:var(--bad);}
 .cell .tag{font-size:7.5px; color:var(--text-dim); line-height:1.15;}
@@ -287,7 +289,13 @@ button{font-family:inherit;}
       <span><i style="background:var(--bad)"></i>まだ誰もいない</span>
     </div>
     <div class="dow-row"><div class="we">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div class="we">土</div></div>
-    <div class="weeks" id="weeks"></div>
+    <div class="cal-viewport" id="calViewport">
+      <div class="cal-track" id="calTrack">
+        <div class="weeks" id="weeksPrev"></div>
+        <div class="weeks" id="weeksCur"></div>
+        <div class="weeks" id="weeksNext"></div>
+      </div>
+    </div>
   </div>
 
   <div id="statsView" hidden>
@@ -540,16 +548,11 @@ function renderUserChip(){
 
 function monthLabel(mo){ return mo.y+"年"+(mo.m+1)+"月"; }
 
-function renderCalendar(){
-  if(!MONTHS.length) return;
-  var mo = MONTHS[state.monthIdx];
-  $("#monthLabel").textContent = monthLabel(mo);
-  $("#prevMonth").disabled = state.monthIdx===0;
-  $("#nextMonth").disabled = state.monthIdx===MONTHS.length-1;
+function renderMonthInto(container, mo){
+  container.innerHTML = "";
+  if(!mo) return; // out of range (before first / after last month) — leave blank
 
   var days = allDaysOfMonth(mo.y, mo.m);
-  var weeksEl = $("#weeks");
-  weeksEl.innerHTML="";
 
   // Fill the lead/trail of the grid with the adjoining month's real dates
   // (dimmed) instead of leaving them blank, so a week split across two
@@ -563,7 +566,7 @@ function renderCalendar(){
   }
   days.forEach(function(d){
     week.push(d);
-    if(week.length===7){ weeksEl.appendChild(renderWeekRow(week, mo.m)); week=[]; }
+    if(week.length===7){ container.appendChild(renderWeekRow(week, mo.m)); week=[]; }
   });
   if(week.length){
     var last = days[days.length-1];
@@ -574,8 +577,26 @@ function renderCalendar(){
       week.push(td);
       n++;
     }
-    weeksEl.appendChild(renderWeekRow(week, mo.m));
+    container.appendChild(renderWeekRow(week, mo.m));
   }
+}
+
+function renderCalendar(){
+  if(!MONTHS.length) return;
+  var mo = MONTHS[state.monthIdx];
+  $("#monthLabel").textContent = monthLabel(mo);
+  $("#prevMonth").disabled = state.monthIdx===0;
+  $("#nextMonth").disabled = state.monthIdx===MONTHS.length-1;
+
+  renderMonthInto($("#weeksPrev"), MONTHS[state.monthIdx-1] || null);
+  renderMonthInto($("#weeksCur"), mo);
+  renderMonthInto($("#weeksNext"), MONTHS[state.monthIdx+1] || null);
+
+  var track = $("#calTrack");
+  track.style.transition = "none";
+  track.style.transform = "translateX(-33.3334%)";
+  // force reflow so the next transform change (if any) animates again
+  void track.offsetHeight;
 }
 
 function renderWeekRow(week, currentMonth){
@@ -1053,28 +1074,59 @@ function enableSwipeToClose(sheetEl, closeFn){
 enableSwipeToClose($("#daySheet"), closeDay);
 enableSwipeToClose($("#adminSheet"), closeAdmin);
 
-// ---------- swipe left/right to change month ----------
+// ---------- swipe left/right to change month (live, finger-tracking) ----------
 (function(){
-  var startX = 0, startY = 0, tracking = false;
-  var el = $("#calendarView");
-  el.addEventListener("touchstart", function(e){
-    if(e.touches.length !== 1) return;
+  var viewport = $("#calViewport");
+  var track = $("#calTrack");
+  var startX=0, startY=0, dx=0, dragging=null, width=1;
+
+  function atStart(){ return state.monthIdx===0; }
+  function atEnd(){ return state.monthIdx===MONTHS.length-1; }
+
+  viewport.addEventListener("touchstart", function(e){
+    if(e.touches.length!==1) return;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
-    tracking = true;
+    dx = 0;
+    dragging = null;
+    width = viewport.getBoundingClientRect().width || 1;
+    track.style.transition = "none";
   }, {passive:true});
-  el.addEventListener("touchend", function(e){
-    if(!tracking) return;
-    tracking = false;
-    var dx = e.changedTouches[0].clientX - startX;
-    var dy = e.changedTouches[0].clientY - startY;
-    if(Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
-    if(dx < 0){
-      if(state.monthIdx < MONTHS.length-1){ state.monthIdx++; renderCalendar(); }
-    } else {
-      if(state.monthIdx > 0){ state.monthIdx--; renderCalendar(); }
+
+  viewport.addEventListener("touchmove", function(e){
+    var x = e.touches[0].clientX, y = e.touches[0].clientY;
+    var rawDx = x-startX, rawDy = y-startY;
+    if(dragging===null){
+      if(Math.abs(rawDx)<8 && Math.abs(rawDy)<8) return;
+      dragging = Math.abs(rawDx) > Math.abs(rawDy);
+      if(!dragging) return; // more vertical than horizontal — let the page scroll instead
     }
-  }, {passive:true});
+    if(!dragging) return;
+    dx = rawDx;
+    if(dx>0 && atStart()) dx = dx*0.35; // rubber-band at the first/last month
+    if(dx<0 && atEnd()) dx = dx*0.35;
+    var pct = (dx/width) * (100/3);
+    track.style.transform = "translateX(calc(-33.3334% + "+pct+"%))";
+    e.preventDefault();
+  }, {passive:false});
+
+  function finish(){
+    if(dragging!==true){ dragging=null; return; }
+    dragging = null;
+    var threshold = width*0.22;
+    track.style.transition = "transform .22s ease";
+    if(dx <= -threshold && !atEnd()){
+      track.style.transform = "translateX(-66.6668%)";
+      setTimeout(function(){ state.monthIdx++; renderCalendar(); }, 220);
+    } else if(dx >= threshold && !atStart()){
+      track.style.transform = "translateX(0%)";
+      setTimeout(function(){ state.monthIdx--; renderCalendar(); }, 220);
+    } else {
+      track.style.transform = "translateX(-33.3334%)";
+    }
+  }
+  viewport.addEventListener("touchend", finish);
+  viewport.addEventListener("touchcancel", finish);
 })();
 
 // ---------- wiring ----------
