@@ -258,6 +258,7 @@ button{font-family:inherit;}
     <div class="brand"><div class="mark">掃</div><div class="title">掃除当番カレンダー</div></div>
     <div style="display:flex; align-items:center; gap:6px;">
       <button class="iconbtn" id="installBtn" title="ホーム画面に追加" hidden>📲</button>
+      <button class="iconbtn" id="notifyBtn" title="通知を許可">🔔</button>
       <button class="iconbtn" id="adminBtn" title="管理">⚙️</button>
       <button class="userchip offline" id="userChip"><span class="dot"></span><span id="userChipLabel">未ログイン</span></button>
     </div>
@@ -928,6 +929,44 @@ if(isIos() && !isStandalone()){
   document.addEventListener("DOMContentLoaded", function(){ $("#installBtn").hidden = false; });
 }
 
+// ---------- Web Push ("通知を許可") ----------
+function urlBase64ToUint8Array(base64String){
+  var padding = "=".repeat((4 - base64String.length % 4) % 4);
+  var base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  var raw = atob(base64);
+  var arr = new Uint8Array(raw.length);
+  for(var i=0;i<raw.length;i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+async function enablePush(){
+  if(!("serviceWorker" in navigator) || !("PushManager" in window)){
+    toast("この端末・ブラウザは通知に対応していません");
+    return;
+  }
+  if(isIos() && !isStandalone()){
+    toast("iPhoneでは、まずホーム画面に追加してから、そのアイコンで開いた状態で通知を許可してください");
+    return;
+  }
+  var perm = await Notification.requestPermission();
+  if(perm !== "granted"){ toast("通知が許可されませんでした"); return; }
+  try{
+    var reg = await navigator.serviceWorker.ready;
+    var keyRes = await api("/api/push/public-key");
+    if(!keyRes.ok || !keyRes.data.publicKey){ toast("サーバー側の通知設定が未完了です"); return; }
+    var existing = await reg.pushManager.getSubscription();
+    var sub = existing || await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(keyRes.data.publicKey)
+    });
+    await api("/api/push/subscribe", {method:"POST", body:{subscription: sub.toJSON()}});
+    toast("通知をオンにしました");
+  }catch(e){
+    console.error(e);
+    toast("通知の設定に失敗しました");
+  }
+}
+
 async function dayOp(ds, op, payload){
   if(!state.memberId){ toast("先に名前を登録してください"); return; }
   var body = Object.assign({op:op}, payload);
@@ -998,6 +1037,7 @@ $("#statsNext").addEventListener("click", function(){ if(state.statsMonthIdx<MON
 $("#userChip").addEventListener("click", changeIdentity);
 $("#adminBtn").addEventListener("click", openAdmin);
 $("#installBtn").addEventListener("click", handleInstallClick);
+$("#notifyBtn").addEventListener("click", enablePush);
 document.querySelectorAll(".tabbtn").forEach(function(b){
   b.addEventListener("click", function(){
     document.querySelectorAll(".tabbtn").forEach(function(x){ x.classList.remove("active"); });

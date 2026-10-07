@@ -11,6 +11,13 @@ binding = "DB"
 database_name = "lab-cleaning-roster"
 database_id = "272e24db-792e-4e9f-bcd4-08201d3c33c5"
 
-# 22:00 UTC = 07:00 JST (checks today's slots), 10:00 UTC = 19:00 JST (checks tomorrow's)
+# 22:00 UTC = 07:00 JST (checks today's slots), 10:00 UTC = 19:00 JST (checks tomorrow's),
+# Saturday 22:00 UTC = Sunday 07:00 JST (weekly "plan next week" push notification)
 [triggers]
-crons = ["0 22 * * *", "0 10 * * *"]
+crons = ["0 22 * * *", "0 10 * * *", "0 22 * * 6"]
+
+[vars]
+# Public VAPID key for Web Push — not secret, served to the frontend via /api/push/public-key.
+# The matching private key is set separately with: wrangler secret put VAPID_PRIVATE_KEY
+VAPID_PUBLIC_KEY = "BP61i_OzMrI5fOE6ZCA9tYvQniDLcZg2r7DhJGI2ZdjIEjBoAtmddpa8o3P-gLerTad_BfGPpdpj30NWG3QVk1k"
+VAPID_SUBJECT = "mailto:shu.tokyo28@gmail.com"

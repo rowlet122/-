@@ -2,6 +2,8 @@
 // No external account needed: a device picks one of the 10 fixed names once,
 // gets a random bearer token back, and keeps it in localStorage from then on.
 
+import { buildPushPayload } from "@block65/webcrypto-web-push";
+
 const MEMBERS = [
   { id: "takai", name: "高井" },
   { id: "yamamoto", name: "山本" },
@@ -357,6 +359,63 @@ async function handleDayOp(req, env, date) {
   return json({ error: "busy" }, 409);
 }
 
+// ---------- Web Push (native "allow notifications" push to the phone) ----------
+async function handlePushPublicKey(env) {
+  return json({ publicKey: env.VAPID_PUBLIC_KEY || null });
+}
+
+async function handlePushSubscribe(req, env) {
+  const { memberId } = await getAuthMemberId(req, env);
+  const body = await req.json().catch(() => ({}));
+  const sub = body.subscription;
+  if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+    return json({ error: "invalid_subscription" }, 400);
+  }
+  await env.DB.prepare(
+    "INSERT INTO push_subscriptions (endpoint, p256dh, auth, member_id, created_at) VALUES (?, ?, ?, ?, ?) " +
+      "ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, member_id = excluded.member_id"
+  )
+    .bind(sub.endpoint, sub.keys.p256dh, sub.keys.auth, memberId || null, new Date().toISOString())
+    .run();
+  return json({ ok: true });
+}
+
+async function handlePushUnsubscribe(req, env) {
+  const body = await req.json().catch(() => ({}));
+  if (!body.endpoint) return json({ error: "invalid_subscription" }, 400);
+  await env.DB.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(body.endpoint).run();
+  return json({ ok: true });
+}
+
+async function sendPushToAll(env, title, body) {
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return; // not configured — no-op
+  const vapid = {
+    subject: env.VAPID_SUBJECT,
+    publicKey: env.VAPID_PUBLIC_KEY,
+    privateKey: env.VAPID_PRIVATE_KEY,
+  };
+  const { results } = await env.DB.prepare("SELECT endpoint, p256dh, auth FROM push_subscriptions").all();
+  const message = { data: { title, body }, options: { ttl: 3600 } };
+  await Promise.all(
+    results.map(async (row) => {
+      const subscription = {
+        endpoint: row.endpoint,
+        expirationTime: null,
+        keys: { p256dh: row.p256dh, auth: row.auth },
+      };
+      try {
+        const payload = await buildPushPayload(message, subscription, vapid);
+        const res = await fetch(subscription.endpoint, payload);
+        if (res.status === 404 || res.status === 410) {
+          await env.DB.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(row.endpoint).run();
+        }
+      } catch (e) {
+        console.error("push failed", e);
+      }
+    })
+  );
+}
+
 // ---------- scheduled reminders (cron) ----------
 function jstDateStr(offsetDays) {
   const d = new Date(Date.now() + 9 * 3600 * 1000 + offsetDays * 86400000);
@@ -364,6 +423,15 @@ function jstDateStr(offsetDays) {
 }
 
 async function runReminder(cronExpr, env) {
+  if (cronExpr === "0 22 * * 6") {
+    // Sunday 07:00 JST — nudge everyone to plan next week's roster
+    await sendPushToAll(
+      env,
+      "🧹 来週の掃除当番を決めましょう",
+      "まだ空いている日があれば、アプリから参加登録をお願いします。"
+    );
+    return;
+  }
   const isMorningCheck = cronExpr === "0 22 * * *"; // 07:00 JST — check today
   const targetDate = isMorningCheck ? jstDateStr(0) : jstDateStr(1); // evening cron checks tomorrow
   const dow = new Date(targetDate + "T00:00:00Z").getUTCDay();
@@ -406,6 +474,9 @@ export default {
     if (path === "/api/config" && req.method === "GET") return handleConfig(env);
     if (path === "/api/admin/period" && req.method === "POST") return handleAdminPeriod(req, env);
     if (path === "/api/admin/holidays" && req.method === "POST") return handleAdminHolidays(req, env);
+    if (path === "/api/push/public-key" && req.method === "GET") return handlePushPublicKey(env);
+    if (path === "/api/push/subscribe" && req.method === "POST") return handlePushSubscribe(req, env);
+    if (path === "/api/push/unsubscribe" && req.method === "POST") return handlePushUnsubscribe(req, env);
 
     const dayMatch = path.match(/^\/api\/day\/(\d{4}-\d{2}-\d{2})$/);
     if (dayMatch && req.method === "POST") return handleDayOp(req, env, dayMatch[1]);

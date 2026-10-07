@@ -89,6 +89,34 @@ wrangler secret put LINE_CHANNEL_ACCESS_TOKEN
 wrangler secret put LINE_TARGET_ID
 ```
 
+## 通知を許可する（プッシュ通知）
+
+アプリ右上の🔔ボタンから、スマホのOS標準の通知（LINEやDiscordを介さない、アプリ自体からの通知）を許可できます。毎週日曜7:00（JST）に「来週の掃除当番を決めましょう」という通知が届きます。ホーム画面に追加したアプリを一度も開いていなくても、通知自体は届きます。
+
+この機能を有効にするには、初回デプロイ時に以下の追加作業が必要です。
+
+```bash
+# 依存ライブラリをインストール（初回のみ）
+npm install
+
+# D1に通知購読テーブルを追加
+wrangler d1 execute lab-cleaning-roster --remote --file=./schema.sql
+
+# VAPID秘密鍵を登録（この値は変更しないでください。wrangler.tomlの公開鍵と対になっています）
+wrangler secret put VAPID_PRIVATE_KEY
+```
+
+`VAPID_PRIVATE_KEY` の入力を求められたら、次の値を貼り付けてください。
+
+```
+dQ_tbHD2uJjaQNSxD64eAMnIRb-0jP-npdp0AFbqXYE
+```
+
+登録できたら `wrangler deploy` してください。
+
+- iPhoneの場合、Safariで直接開いただけでは通知を許可できません。先に📲ボタンでホーム画面に追加し、そのアイコンから開いた状態で🔔ボタンを押してください。
+- Androidの場合はブラウザで開いたままでも通知を許可できます。
+
 ## 管理機能（次の期に切り替える）
 
 次の学期が始まるとき、コードを書き換えず、アプリの画面から対象期間を変更できます。
@@ -109,6 +137,9 @@ wrangler secret put ADMIN_PASSWORD
 
 ```bash
 git pull
+npm install
 wrangler d1 execute lab-cleaning-roster --remote --file=./schema.sql
 wrangler deploy
 ```
+
+（`package.json` に依存ライブラリが追加されたため、`npm install` が必要になりました。）

@@ -35,3 +35,12 @@ INSERT OR IGNORE INTO config (key, value) VALUES (
   'holidays',
   '{"2026-10-12":"スポーツの日","2026-11-03":"文化の日","2026-11-23":"勤労感謝の日","2027-01-01":"元日","2027-01-11":"成人の日","2027-02-11":"建国記念の日","2027-02-23":"天皇誕生日","2027-03-21":"春分の日","2027-03-22":"振替休日"}'
 );
+
+-- Web Push subscriptions (one row per device that allowed notifications)
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  member_id TEXT,
+  created_at TEXT NOT NULL
+);
