@@ -113,9 +113,11 @@ button{font-family:inherit;}
 .userchip.offline .dot{background:var(--text-dim);}
 .iconbtn{
   width:32px;height:32px;border-radius:999px;border:1px solid var(--border);
-  background:var(--surface-2); font-size:15px; cursor:pointer; flex:none;
+  background:var(--surface-2); color:var(--text-dim); cursor:pointer; flex:none;
   display:flex;align-items:center;justify-content:center;
 }
+.iconbtn svg{width:17px;height:17px;display:block;}
+.tabbtn .ic svg{width:19px;height:19px;display:block;}
 .field{display:flex; flex-direction:column; gap:4px; margin-bottom:10px;}
 .field label{font-size:12px; font-weight:600; color:var(--text-dim);}
 .field input{
@@ -147,7 +149,7 @@ button{font-family:inherit;}
   background:var(--surface); padding:4px 2px 3px 4px; cursor:pointer; text-align:left;
   display:flex; flex-direction:column; gap:2px; min-width:0;
 }
-.cell.empty{visibility:hidden;}
+.cell.other-month{opacity:.42;}
 .cell .d{font-size:11px; font-weight:700;}
 .cell .status-bar{position:absolute; left:0; top:0; bottom:0; width:3px;}
 .cell .names{display:flex;flex-direction:column;gap:1px; margin-top:auto;}
@@ -257,9 +259,9 @@ button{font-family:inherit;}
   <div class="topbar">
     <div class="brand"><div class="mark">掃</div><div class="title">掃除当番カレンダー</div></div>
     <div style="display:flex; align-items:center; gap:6px;">
-      <button class="iconbtn" id="installBtn" title="ホーム画面に追加" hidden>📲</button>
-      <button class="iconbtn" id="notifyBtn" title="通知を許可">🔔</button>
-      <button class="iconbtn" id="adminBtn" title="管理">⚙️</button>
+      <button class="iconbtn" id="installBtn" title="ホーム画面に追加" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg></button>
+      <button class="iconbtn" id="notifyBtn" title="通知を許可"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 4.5 1.5 6 2 7H4c.5-1 2-2.5 2-7Z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg></button>
+      <button class="iconbtn" id="adminBtn" title="管理"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="7" cy="18" r="2"/></svg></button>
       <button class="userchip offline" id="userChip"><span class="dot"></span><span id="userChipLabel">未ログイン</span></button>
     </div>
   </div>
@@ -300,8 +302,8 @@ button{font-family:inherit;}
 
 <div class="tabbar">
   <div class="tabbar-inner">
-    <button class="tabbtn active" data-tab="calendar"><span class="ic">🗓️</span>カレンダー</button>
-    <button class="tabbtn" data-tab="stats"><span class="ic">📊</span>統計</button>
+    <button class="tabbtn active" data-tab="calendar"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></span>カレンダー</button>
+    <button class="tabbtn" data-tab="stats"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="19" x2="5" y2="11"/><line x1="12" y1="19" x2="12" y2="5"/><line x1="19" y1="19" x2="19" y2="14"/></svg></span>統計</button>
   </div>
 </div>
 
@@ -541,25 +543,39 @@ function renderCalendar(){
   var days = allDaysOfMonth(mo.y, mo.m);
   var weeksEl = $("#weeks");
   weeksEl.innerHTML="";
-  var leadBlanks = days[0].getDay(); // getDay() is already 0(Sun)..6(Sat), week starts Sunday
+
+  // Fill the lead/trail of the grid with the adjoining month's real dates
+  // (dimmed) instead of leaving them blank, so a week split across two
+  // months stays fully visible.
+  var leadCount = days[0].getDay(); // 0(Sun)..6(Sat), week starts Sunday
   var week = [];
-  for(var i=0;i<leadBlanks;i++) week.push(null);
+  for(var i=leadCount;i>0;i--){
+    var ld = new Date(days[0]);
+    ld.setDate(ld.getDate()-i);
+    week.push(ld);
+  }
   days.forEach(function(d){
     week.push(d);
-    if(week.length===7){ weeksEl.appendChild(renderWeekRow(week)); week=[]; }
+    if(week.length===7){ weeksEl.appendChild(renderWeekRow(week, mo.m)); week=[]; }
   });
   if(week.length){
-    while(week.length<7) week.push(null);
-    weeksEl.appendChild(renderWeekRow(week));
+    var last = days[days.length-1];
+    var n = 1;
+    while(week.length<7){
+      var td = new Date(last);
+      td.setDate(td.getDate()+n);
+      week.push(td);
+      n++;
+    }
+    weeksEl.appendChild(renderWeekRow(week, mo.m));
   }
 }
 
-function renderWeekRow(week){
+function renderWeekRow(week, currentMonth){
   var row=document.createElement("div");
   row.className="week";
   week.forEach(function(d){
-    if(!d){ var e=document.createElement("div"); e.className="cell empty"; row.appendChild(e); return; }
-    row.appendChild(renderCell(d));
+    row.appendChild(renderCell(d, d.getMonth()!==currentMonth));
   });
   return row;
 }
@@ -572,19 +588,20 @@ function slotCount(data){
   return c;
 }
 
-function renderCell(d){
+function renderCell(d, otherMonth){
   var ds = iso(d);
   var dow = d.getDay();
+  var otherCls = otherMonth ? " other-month" : "";
   if(dow===0 || dow===6){
     var wcell=document.createElement("div");
-    wcell.className="cell weekend";
+    wcell.className="cell weekend"+otherCls;
     wcell.innerHTML = '<div class="d">'+d.getDate()+'</div>';
     return wcell;
   }
   var data = state.days.get(ds);
   var cnt = slotCount(data);
   var cell=document.createElement("button");
-  cell.className="cell "+(cnt===2?"full":cnt===1?"half":"none")+(HOLIDAYS[ds]?" holiday":"");
+  cell.className="cell "+(cnt===2?"full":cnt===1?"half":"none")+(HOLIDAYS[ds]?" holiday":"")+otherCls;
   cell.setAttribute("type","button");
   var bar = cnt===2?"var(--good)":cnt===1?"var(--warn)":"var(--bad)";
   var html = '<div class="status-bar" style="background:'+bar+'"></div>';
