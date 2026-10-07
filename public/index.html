@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>掃除当番カレンダー</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icons/icon-192.png">
@@ -76,23 +76,27 @@
   --shadow:0 8px 24px rgba(0,0,0,0.4);
 }
 *{box-sizing:border-box;}
-html,body{height:100%;}
-html{overscroll-behavior-y:contain;}
+html,body{height:100%; overflow:hidden; overscroll-behavior:none;}
 body{
   margin:0;
   background:var(--bg);
   color:var(--text);
   font-family:"Zen Kaku Gothic New",system-ui,-apple-system,sans-serif;
-  padding-inline:8px;
-  padding-block:calc(12px + env(safe-area-inset-top,0px)) calc(90px + env(safe-area-inset-bottom,0px));
-  min-height:100%;
-  overscroll-behavior-y:contain;
   touch-action:manipulation;
+  display:flex;
+  flex-direction:column;
 }
 .mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;}
 h1,h2,h3{text-wrap:balance;margin:0;}
 button{font-family:inherit;}
-.app{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:14px;}
+.app{
+  max-width:560px; width:100%; margin:0 auto; display:flex; flex-direction:column; gap:14px;
+  flex:1; min-height:0;
+  padding-inline:8px;
+  padding-block:calc(12px + env(safe-area-inset-top,0px)) calc(90px + env(safe-area-inset-bottom,0px));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
 
 .topbar{
   position:sticky; top:env(safe-area-inset-top,0px); z-index:20;
