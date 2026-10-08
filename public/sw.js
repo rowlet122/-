@@ -1,7 +1,11 @@
 // Minimal service worker: just enough app-shell caching to satisfy "installable"
 // criteria on Android/Chrome. API calls always go to the network — never cached,
-// since the roster data must stay live.
-const CACHE = "roster-shell-v1";
+// since the roster data must stay live. The shell itself is network-first (not
+// cache-first): this is a small, frequently-updated app, so a visit should
+// always show the latest deploy, falling back to the cache only when there is
+// no connectivity. Bump CACHE whenever the shell's behavior changes in a way
+// that needs a clean cache (rare — network-first mostly self-heals).
+const CACHE = "roster-shell-v2";
 const SHELL = ["/", "/index.html", "/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -48,14 +52,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.pathname.startsWith("/api/")) return; // always network
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
-        .then((res) => {
-          if (res.ok) caches.open(CACHE).then((c) => c.put(event.request, res.clone()));
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(event.request)
+      .then((res) => {
+        if (res.ok) caches.open(CACHE).then((c) => c.put(event.request, res.clone()));
+        return res;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

@@ -967,7 +967,21 @@ async function handleInstallClick(){
 
 if("serviceWorker" in navigator){
   window.addEventListener("load", function(){
-    navigator.serviceWorker.register("/sw.js").catch(function(){});
+    navigator.serviceWorker.register("/sw.js").then(function(reg){
+      reg.update(); // check for a newer sw.js immediately, don't wait for the browser's own schedule
+      reg.addEventListener("updatefound", function(){
+        var nw = reg.installing;
+        if(!nw) return;
+        nw.addEventListener("statechange", function(){
+          // a controller change means the new worker just took over — this
+          // tab was being served by the old one, so reload once to pick up
+          // the fresh shell instead of staying on stale cached content.
+          if(nw.state==="activated" && navigator.serviceWorker.controller){
+            window.location.reload();
+          }
+        });
+      });
+    }).catch(function(){});
   });
 }
 if(isIos() && !isStandalone()){
